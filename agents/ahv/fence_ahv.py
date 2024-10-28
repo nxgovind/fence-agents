@@ -164,14 +164,17 @@ class NutanixV4Client(NutanixClient):
 
         vm_url = self.vm_url + f"/{vm_uuid}"
         logging.info("Getting config information for VM, %s", vm_uuid)
-        header_str = self._get_headers()
 
         try:
+            header_str = self._get_headers()
             resp = self.request(url=vm_url, method='GET',
                                 headers=header_str, verify=self.verify)
         except NutanixClientException as err:
             logging.error("Failed to retrieve VM details "
                           "for VM UUID: vm_uuid")
+            raise AHVFenceAgentException from err
+        except AHVFenceAgentException as err:
+            logging.error("Failed to retrieve etag from headers")
             raise AHVFenceAgentException from err
 
         return resp
@@ -193,6 +196,9 @@ class NutanixV4Client(NutanixClient):
         except NutanixClientException as err:
             logging.error("Failed to power off VM %s", vm_uuid)
             raise AHVFenceAgentException from err
+        except AHVFenceAgentException as err:
+            logging.error("Failed to retrieve etag from headers")
+            raise AHVFenceAgentException from err
 
         return resp
 
@@ -212,6 +218,9 @@ class NutanixV4Client(NutanixClient):
         except NutanixClientException as err:
             logging.error("Failed to power on VM %s", vm_uuid)
             raise AHVFenceAgentException from err
+        except AHVFenceAgentException as err:
+            logging.error("Failed to retrieve etag from headers")
+            raise AHVFenceAgentException from err
 
         return resp
 
@@ -230,6 +239,9 @@ class NutanixV4Client(NutanixClient):
                                 headers=header_str, verify=self.verify)
         except NutanixClientException as err:
             logging.error("Failed to power on VM %s", vm_uuid)
+            raise AHVFenceAgentException from err
+        except AHVFenceAgentException as err:
+            logging.error("Failed to retrieve etag from headers")
             raise AHVFenceAgentException from err
 
         return resp
@@ -266,6 +278,9 @@ class NutanixV4Client(NutanixClient):
                 task_status = task_resp.json()['data']['status']
             except NutanixClientException as err:
                 logging.error("Unable to retrieve task status")
+                raise AHVFenceAgentException from err
+            except Exception as err:
+                logging.error("Unknown error")
                 raise AHVFenceAgentException from err
 
             if task_status == 'FAILED':
