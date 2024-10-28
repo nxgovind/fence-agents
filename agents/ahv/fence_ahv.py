@@ -56,6 +56,10 @@ class NutanixClient:
             logging.debug("Sending %s request to %s", method, url)
             response = session.request(method, url, **kwargs)
             response.raise_for_status()
+        except requests.exceptions.SSLError as err:
+            logging.error("Secure connection failed, verify SSL certificate")
+            logging.error("Error message: %s", err)
+            raise NutanixClientException("Secure connection failed") from err
         except requests.exceptions.RequestException as err:
             logging.error("API call failed: %s", response.text)
             logging.error("Error message: %s", err)
