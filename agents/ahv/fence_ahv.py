@@ -429,12 +429,12 @@ def connect(options):
     host = options["--ip"]
     username = options["--username"]
     password = options["--password"]
-    verify_ssl = False
-    disable_warnings = True
+    verify_ssl = True
+    disable_warnings = False
 
-    if "--ssl-secure" in options:
-        verify_ssl = True
-        disable_warnings = False
+    if "--ssl-insecure" in options:
+        verify_ssl = False
+        disable_warnings = True
 
     client = NutanixV4Client(host, username, password,
                              verify_ssl, disable_warnings)
