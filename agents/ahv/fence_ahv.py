@@ -1,8 +1,7 @@
-"""
-AHV Fence agent
+#!@PYTHON@ -tt
 
-Compatible with AHV v4 API
-"""
+# AHV Fence agent
+# Compatible with Nutanix v4 API
 
 
 import atexit
@@ -13,58 +12,32 @@ import uuid
 import requests
 
 sys.path.append("@FENCEAGENTSLIBDIR@")
-import fencing
+from fencing import *
+from fencing import fail, EC_LOGIN_DENIED, EC_GENERIC_ERROR, run_delay
 
 
 V4_VERSION = '4.0'
 MIN_TIMEOUT = 60
 PC_PORT = 9440
+POWER_STATES = {"ON": "on", "OFF": "off", "PAUSED": "off", "UNKNOWN": "off"}
 
 
 class NutanixClientException(Exception):
-    """
-    Exception class for Nutanix NutanixClient
-    """
+    pass
+
 
 class AHVFenceAgentException(Exception):
-    """
-    Exception class for AHV Fence Agent
-    """
+    pass
 
 
 class NutanixClient:
-    """
-    Nutanix REST Client base class
-    """
     def __init__(self, username, password, disable_warnings=False):
-        """
-        Init method
-
-        Args:
-            username(str): username for Prism Central user
-            password(str): password for Prism Central user account
-
-        Returns:
-            None
-        """
         self.username = username
         self.password = password
         self.valid_status_codes = [200, 202]
         self.disable_warnings = disable_warnings
 
     def request(self, url, method='GET', headers=None, **kwargs):
-        """
-        Process requests based on the requested method.
-
-        Args:
-            url(str): URL of the API end point.
-            method(str): HTTP request method.
-            headers(dict): HTTP request headers
-            **kwargs: Any other keyword args relevant to the method.
-
-        Returns:
-            response: response object.
-        """
         session = requests.Session()
         session.auth = (self.username, self.password)
 
@@ -96,26 +69,9 @@ class NutanixClient:
         return response
 
 
-class V4NutanixClient(NutanixClient):
-    """
-    Nutanix V4 API client wrapper class. This implements the
-    necessary methods for listing VMs, getting power state
-    of VMs, and setting power state of VMs.
-    """
+class NutanixV4Client(NutanixClient):
     def __init__(self, host=None, username=None, password=None,
                  verify=False, disable_warnings=False):
-        """
-        Init method
-
-        Args:
-            host(str): Host IP address or hostname
-            username(str): username for Prism Central
-            password(str): password for Prism Central account
-            verify(boolean): ssl verify
-
-        Returns:
-            None
-        """
         self.host = host
         self.username = username
         self.password = password
@@ -126,15 +82,6 @@ class V4NutanixClient(NutanixClient):
         super().__init__(username, password, disable_warnings)
 
     def _get_headers(self, vm_uuid=None):
-        """
-        Get headers for HTTP request.
-
-        Args:
-            vm_uuid(str): VM UUID.
-
-        Returns:
-            dict: HTTP headers.
-        """
         resp = None
         headers = {'Accept':'application/json',
                    'Content-Type': 'application/json'}
@@ -154,16 +101,6 @@ class V4NutanixClient(NutanixClient):
         return headers
 
     def _get_all_vms(self, filter_str=None, limit=None):
-        """
-        Get a list all registered VMs in Nutanix Prism Central cluster
-
-        Args:
-            filter_str(str): filter string.
-            limit(int): Number of VMs to return
-
-        Returns:
-            str: A json formatted output of details of all VMs.
-        """
         vm_url = self.vm_url
 
         if filter_str and limit:
@@ -187,15 +124,6 @@ class V4NutanixClient(NutanixClient):
         return vms
 
     def _get_vm_uuid(self, vm_name):
-        """
-        Get VM UUID given a VM name
-
-        Args:
-            vm_name(str): VM name
-
-        Returns:
-            str: VM UUID
-        """
         vm_uuid = None
         resp = None
 
@@ -218,15 +146,6 @@ class V4NutanixClient(NutanixClient):
         return vm_uuid
 
     def _get_vm(self, vm_uuid):
-        """
-        Get config details of an existing VM.
-
-        Args:
-            vm_uuid(str): VM UUID.
-
-        Returns:
-            object: HTTP response object.
-        """
         if not vm_uuid:
             logging.error("VM UUID was not provided")
             raise AHVFenceAgentException("VM UUID not provided")
@@ -246,15 +165,6 @@ class V4NutanixClient(NutanixClient):
         return resp
 
     def _power_off_vm(self, vm_uuid):
-        """
-        Force hard power off of a VM
-
-        Args:
-            vm_uuid(str): VM UUID string
-
-        Returns:
-            object: HTTP response object.
-        """
         resp = None
 
         if not vm_uuid:
@@ -275,15 +185,6 @@ class V4NutanixClient(NutanixClient):
         return resp
 
     def _power_on_vm(self, vm_uuid):
-        """
-        Power on a VM
-
-        Args:
-            vm_uuid(str): VM UUID string
-
-        Returns:
-            object: HTTP response object.
-        """
         if not vm_uuid:
             logging.error("VM UUID was not provided")
             raise AHVFenceAgentException("VM UUID not provided")
@@ -303,15 +204,6 @@ class V4NutanixClient(NutanixClient):
         return resp
 
     def _power_cycle_vm(self, vm_uuid):
-        """
-        Power cycle a VM
-
-        Args:
-            vm_uuid(str): VM UUID string
-
-        Returns:
-            object: HTTP response object.
-        """
         if not vm_uuid:
             logging.error("VM UUID was not provided")
             raise AHVFenceAgentException("VM UUID not provided")
@@ -331,16 +223,6 @@ class V4NutanixClient(NutanixClient):
         return resp
 
     def _wait_for_task(self, task_uuid, timeout=None):
-        """
-        Wait for task completion
-
-        Args:
-            task_uuid(str): Task UUID
-            timeout(int): Timeout value to wait before failing
-
-        Returns:
-            None
-        """
         if not task_uuid:
             logging.error("Task UUID was not provided")
             raise AHVFenceAgentException("Task UUID not provided")
@@ -353,6 +235,11 @@ class V4NutanixClient(NutanixClient):
 
         if not timeout:
             timeout = MIN_TIMEOUT
+        else:
+            try:
+                timeout = int(timeout)
+            except ValueError as err:
+                timeout = MIN_TIMEOUT
 
         while task_status != 'SUCCEEDED':
             if task_status == 'FAILED':
@@ -377,37 +264,34 @@ class V4NutanixClient(NutanixClient):
                                              f" for task: {task_uuid}")
 
     def list_vms(self, filter_str=None, limit=None):
-        """
-        List all VM's name, UUID, and power state
+        vms = None
 
-        Args:
-            filter_str(str): filter string.
+        try:
+            vms = self._get_all_vms(filter_str, limit)
+        except NutanixClientException as err:
+            logging.error("Failed to retrieve VM list")
+            raise AHVFenceAgentException from err
 
-        Returns:
-            list: A list of all VMs (Name, UUID, power state).
-        """
-        vms = self._get_all_vms(filter_str, limit)
-        vm_list = []
+        if not vms or not isinstance(vms, dict):
+            logging.error("Failed to retrieve VM list")
+            raise AHVFenceAgentException from err
+
+        if 'data' not in vms:
+            err = "Error: No VMs listed in response"
+            logging.error("Failed to retrieve VM list")
+            raise AHVFenceAgentException(err)
+
+        vm_list = {}
 
         for vm in vms['data']:
             vm_name = vm['name']
             ext_id = vm['extId']
             power_state = vm['powerState']
-            vm_data = f"{vm_name},{ext_id},{power_state}"
-            vm_list.append(vm_data)
+            vm_list[vm_name] = (ext_id, power_state)
 
         return vm_list
 
     def get_power_state(self, vm_name=None, vm_uuid=None):
-        """
-        Get power state of a VM.
-
-        Args:
-            task_uuid(str): Task UUID.
-
-        Returns:
-            str: A json formatted response to the HTTP request.
-        """
         resp = None
 
         if not vm_name and not vm_uuid:
@@ -428,26 +312,10 @@ class V4NutanixClient(NutanixClient):
             raise AHVFenceAgentException from err
 
         power_state = resp.json()['data']['powerState']
-
-        if power_state.lower() != 'on':
-            power_state = 'OFF'
-
-        return power_state
+        return POWER_STATES[power_state]
 
     def set_power_state(self, vm_name=None, vm_uuid=None,
                         power_state='off', timeout=None):
-        """
-        Set power state of a VM
-
-        Args:
-            vm_name(str): Name of VM
-            vm_uuid(str): VM UUID
-            power_state(str): Requested power state of VM (on/off)
-            timeout(int): Timeout for task in seconds
-
-        Returns:
-            None
-        """
         resp = None
         status = None
         current_power_state = None
@@ -490,17 +358,6 @@ class V4NutanixClient(NutanixClient):
                      power_state.lower(), vm_name)
 
     def power_cycle_vm(self, vm_name=None, vm_uuid=None, timeout=None):
-        """
-        Power cycle a VM
-
-        Args:
-            vm_name(str): Name of VM
-            vm_uuid(str): VM UUID
-            timeout(int): Timeout for task in seconds
-
-        Returns:
-            None
-        """
         resp = None
         status = None
 
@@ -528,16 +385,6 @@ class V4NutanixClient(NutanixClient):
 
 
 def connect(options):
-    """
-    Create a client instance and return it after verifying
-    that the client can connect.
-
-    Args:
-        options(dict): CLI options dictionary
-
-    Returns:
-        A NutanixClient instance
-    """
     host = options["--ip"]
     username = options["--username"]
     password = options["--password"]
@@ -548,7 +395,7 @@ def connect(options):
         verify_ssl = True
         disable_warnings = False
 
-    client = V4NutanixClient(host, username, password,
+    client = NutanixV4Client(host, username, password,
                              verify_ssl, disable_warnings)
 
     try:
@@ -556,26 +403,14 @@ def connect(options):
     except AHVFenceAgentException as err:
         logging.error("Connection to Prism Central Failed")
         logging.error(err)
-        fencing.fail(fencing.EC_LOGIN_DENIED)
+        fail(EC_LOGIN_DENIED)
 
     return client
 
 def get_list(client, options):
-    """
-    List VMs registered with Prism Central
-
-    Args:
-        client(NutanixClient): Nutanix client instance
-        options(dict): CLI options dictionary
-
-    Returns:
-        List of registered VMs
-    """
-
     vm_list = None
     limit = None
     filter_str =  None
-    display_list = None
 
     if "--filter" in options:
         filter_str = options["--filter"]
@@ -585,25 +420,14 @@ def get_list(client, options):
 
     try:
         vm_list = client.list_vms(filter_str, limit)
-        display_list = "\n".join(vm_list)
     except AHVFenceAgentException as err:
         logging.error("Failed to list VMs")
         logging.error(err)
-        fencing.fail(fencing.EC_GENERIC_ERROR)
+        fail(EC_GENERIC_ERROR)
 
-    return display_list
+    return vm_list
 
 def get_power_state(client, options):
-    """
-    Get power state of a VM
-
-    Args:
-        Client(V4NutanixClient instance): V4NutanixClient instance
-        options(dict): options dictionary
-
-    Returns:
-        None
-    """
     vmid = None
     name = None
     power_state = None
@@ -615,25 +439,15 @@ def get_power_state(client, options):
 
     if not vmid and not name:
         logging.error("Need VM name or VM UUID for power op")
-        fencing.fail(fencing.EC_GENERIC_ERROR)
+        fail(EC_GENERIC_ERROR)
     try:
         power_state = client.get_power_state(vm_name=name, vm_uuid=vmid)
     except AHVFenceAgentException:
-        fencing.fail(fencing.EC_GENERIC_ERROR)
+        fail(EC_GENERIC_ERROR)
 
     return power_state
 
 def set_power_state(client, options):
-    """
-    Set power state of a VM
-
-    Args:
-        Client(V4NutanixClient instance): V4NutanixClient instance
-        options(dict): options dictionary
-
-    Returns:
-        None
-    """
     vmid = None
     name = None
     action = None
@@ -641,7 +455,7 @@ def set_power_state(client, options):
 
     if "--action" not in options:
         logging.error("No power op action specified")
-        fencing.fail(fencing.EC_GENERIC_ERROR)
+        fail(EC_GENERIC_ERROR)
 
     action = options["--action"].lower()
 
@@ -655,26 +469,16 @@ def set_power_state(client, options):
 
     if not name and not vmid:
         logging.error("Need VM name or VM UUID to set power state of a VM")
-        fencing.fail(fencing.EC_GENERIC_ERROR)
+        fail(EC_GENERIC_ERROR)
 
     try:
         client.set_power_state(vm_name=name, vm_uuid=vmid,
                                power_state=action, timeout=timeout)
     except AHVFenceAgentException as err:
         logging.error(err)
-        fencing.fail(fencing.EC_GENERIC_ERROR)
+        fail(EC_GENERIC_ERROR)
 
 def power_cycle(client, options):
-    """
-    Power cycle a VM
-
-    Args:
-        Client(V4NutanixClient instance): V4NutanixClient instance
-        options(dict): options dictionary
-
-    Returns:
-        None
-    """
     vmid = None
     name = None
     timeout = None
@@ -689,19 +493,16 @@ def power_cycle(client, options):
 
     if not name and not vmid:
         logging.error("Need VM name or VM UUID to set power cycling a VM")
-        fencing.fail(fencing.EC_GENERIC_ERROR)
+        fail(EC_GENERIC_ERROR)
 
     try:
         client.power_cycle_vm(vm_name=name, vm_uuid=vmid, timeout=timeout)
     except AHVFenceAgentException as err:
         logging.error(err)
-        fencing.fail(fencing.EC_GENERIC_ERROR)
+        fail(EC_GENERIC_ERROR)
 
 def define_new_opts():
-    """
-    Define new CLI args
-    """
-    fencing.all_opt["filter"] = {
+    all_opt["filter"] = {
             "getopt": ":",
             "longopt": "filter",
             "help": """
@@ -716,9 +517,6 @@ def define_new_opts():
             }
 
 def main():
-    """
-    Main function
-    """
     device_opt = [
             "ipaddr",
             "login",
@@ -733,13 +531,13 @@ def main():
             "power_timeout"
             ]
 
-    atexit.register(fencing.atexit_handler)
+    atexit.register(atexit_handler)
     define_new_opts()
 
-    fencing.all_opt["method"]["default"] = "onoff"
-    fencing.all_opt["disable_timeout"]["default"] = "false"
-    fencing.all_opt["power_timeout"]["default"] = str(MIN_TIMEOUT)
-    options = fencing.check_input(device_opt, fencing.process_input(device_opt))
+    all_opt["method"]["default"] = "onoff"
+    all_opt["disable_timeout"]["default"] = "false"
+    all_opt["power_timeout"]["default"] = str(MIN_TIMEOUT)
+    options = check_input(device_opt, process_input(device_opt))
     docs = {}
     docs["shortdesc"] = "Fencing agent for Nutanix AHV Cluster VMs."
     docs["longdesc"] = """
@@ -748,14 +546,13 @@ def main():
                         being managed by Prism Central.
                         """
     docs["vendorurl"] = "https://www.nutanix.com"
-    fencing.show_docs(options, docs)
-    fencing.run_delay(options)
+    show_docs(options, docs)
+    run_delay(options)
     client = connect(options)
 
-    result = fencing.fence_action(
-            client, options, set_power_state, get_power_state,
-            get_list, reboot_cycle_fn=power_cycle
-            )
+    result = fence_action(client, options, set_power_state, get_power_state,
+                          get_list, reboot_cycle_fn=power_cycle
+                         )
 
     sys.exit(result)
 
