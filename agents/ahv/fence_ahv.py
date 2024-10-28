@@ -407,7 +407,7 @@ class V4NutanixClient(NutanixClient):
                 try:
                         resp = self._get_vm(vm_uuid)
                 except AHVFenceAgentException as err:
-                        logging.error("Unable to retrieve VM power state")
+                        logging.error("Unable to retrieve power state of VM %s", vm_uuid)
                         raise AHVFenceAgentException from err
 
                 power_state = resp.json()['data']['powerState']
@@ -433,6 +433,7 @@ class V4NutanixClient(NutanixClient):
                 """
                 resp = None
                 status = None
+                current_power_state = None
 
                 if not timeout:
                         timeout = MIN_TIMEOUT
@@ -443,6 +444,15 @@ class V4NutanixClient(NutanixClient):
 
                 if not vm_uuid:
                         vm_uuid = self._get_vm_uuid(vm_name)
+
+                try:
+                        current_power_state = self.get_power_state(vm_uuid=vm_uuid)
+                except AHVFenceAgentException as err:
+                        raise AHVFenceAgentException from err
+
+                if current_power_state.lower() == power_state.lower():
+                        logging.info("VM already powered %s", power_state.lower())
+                        return
 
                 if power_state.lower() == 'on':
                         resp = self._power_on_vm(vm_uuid)
@@ -545,6 +555,7 @@ def get_list(client, options):
         vm_list = None
         limit = None
         filter_str =  None
+        display_list = None
 
         if "--filter" in options:
                 filter_str = options["--filter"]
@@ -554,11 +565,13 @@ def get_list(client, options):
 
         try:
                 vm_list = client.list_vms(filter_str, limit)
+                display_list = "\n".join(vm_list)
         except AHVFenceAgentException as err:
                 logging.error("Failed to list VMs")
                 logging.error(err)
                 fencing.fail(fencing.EC_GENERIC_ERROR)
-        return vm_list
+
+        return display_list
 
 def get_power_state(client, options):
         """
