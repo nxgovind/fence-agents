@@ -184,7 +184,7 @@ class V4NutanixClient(NutanixClient):
                         raise AHVFenceAgentException("VM name not provided")
 
                 try:
-                        filter_str = f"\"name eq '{vm_name}'\""
+                        filter_str = f"name eq '{vm_name}'"
                         resp = self._get_all_vms(filter_str=filter_str)
                 except AHVFenceAgentException as err:
                         logging.error("Failed to get VM info for VM %s", vm_name)
