@@ -13,7 +13,7 @@ import requests
 
 sys.path.append("@FENCEAGENTSLIBDIR@")
 from fencing import *
-from fencing import fail, EC_LOGIN_DENIED, EC_GENERIC_ERROR, run_delay
+from fencing import fail, EC_LOGIN_DENIED, EC_GENERIC_ERROR, EC_TIMED_OUT, run_delay
 
 
 V4_VERSION = '4.0'
@@ -269,7 +269,7 @@ class NutanixV4Client(NutanixClient):
                 raise AHVFenceAgentException from err
 
             if task_status == 'FAILED':
-                raise NutanixClientException(f"Task failed, task uuid: {task_uuid}")
+                raise AHVFenceException(f"Task failed, task uuid: {task_uuid}")
 
     def list_vms(self, filter_str=None, limit=None):
         vms = None
