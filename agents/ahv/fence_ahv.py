@@ -329,32 +329,27 @@ class V4NutanixClient(NutanixClient):
                 header_str = self._get_headers()
                 task_resp = None
                 interval = 10
+                task_status = None
 
                 if not timeout:
                         timeout = MIN_TIMEOUT
-
-                try:
-                        task_resp = self.request(url=task_url, method='GET',
-                                                 headers=header_str, verify=self.verify)
-                except NutanixClientException as err:
-                        logging.error("Unable to retrieve task status")
-                        raise AHVFenceAgentException from err
-
-                task_status = task_resp.json()['data']['status']
 
                 while task_status != 'SUCCEEDED':
                         if task_status == 'FAILED':
                                 raise NutanixClientException(f"Task failed, task uuid: {task_uuid}")
 
-                        time.sleep(interval)
                         try:
                                 task_resp = self.request(url=task_url, method='GET',
                                                          headers=header_str, verify=self.verify)
+                                task_status = task_resp.json()['data']['status']
                         except NutanixClientException as err:
                                 logging.error("Unable to retrieve task status")
                                 raise AHVFenceAgentException from err
 
-                        task_status = task_resp.json()['data']['status']
+                        if task_status == 'SUCCEEDED':
+                                break
+
+                        time.sleep(interval)
                         timeout = timeout - interval
 
                         if task_status == 'SUCCEEDED':
