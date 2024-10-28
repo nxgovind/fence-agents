@@ -413,7 +413,7 @@ class V4NutanixClient(NutanixClient):
                 power_state = resp.json()['data']['powerState']
 
                 if power_state.lower() != 'on':
-                        power_state = 'off'
+                        power_state = 'OFF'
 
                 return power_state
 
