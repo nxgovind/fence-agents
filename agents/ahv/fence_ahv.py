@@ -36,7 +36,7 @@ class NutanixClient:
     """
     Nutanix REST Client base class
     """
-    def __init__(self, username, password):
+    def __init__(self, username, password, disable_warnings=False):
         """
         Init method
 
@@ -50,6 +50,7 @@ class NutanixClient:
         self.username = username
         self.password = password
         self.valid_status_codes = [200, 202]
+        self.disable_warnings = disable_warnings
 
     def request(self, url, method='GET', headers=None, **kwargs):
         """
@@ -66,6 +67,9 @@ class NutanixClient:
         """
         session = requests.Session()
         session.auth = (self.username, self.password)
+
+        if self.disable_warnings:
+            requests.packages.urllib3.disable_warnings()
 
         if headers:
             session.headers.update(headers)
@@ -97,7 +101,8 @@ class V4NutanixClient(NutanixClient):
     necessary methods for listing VMs, getting power state
     of VMs, and setting power state of VMs.
     """
-    def __init__(self, host=None, username=None, password=None, verify=False):
+    def __init__(self, host=None, username=None, password=None,
+                 verify=False, disable_warnings=False):
         """
         Init method
 
@@ -117,7 +122,7 @@ class V4NutanixClient(NutanixClient):
         self.base_url = f"https://{self.host}:{PC_PORT}/api"
         self.vm_url = f"{self.base_url}/vmm/v{V4_VERSION}/ahv/config/vms"
         self.task_url = f"{self.base_url}/prism/v{V4_VERSION}/config/tasks"
-        super().__init__(username, password)
+        super().__init__(username, password, disable_warnings)
 
     def _get_headers(self, vm_uuid=None):
         """
@@ -536,11 +541,14 @@ def connect(options):
     username = options["--username"]
     password = options["--password"]
     verify_ssl = False
+    disable_warnings = True
 
     if "--ssl-secure" in options:
         verify_ssl = True
+        disable_warnings = False
 
-    client = V4NutanixClient(host, username, password, verify_ssl)
+    client = V4NutanixClient(host, username, password,
+                             verify_ssl, disable_warnings)
 
     try:
         client.list_vms(limit=1)
