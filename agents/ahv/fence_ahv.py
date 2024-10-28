@@ -29,6 +29,9 @@ class NutanixClientException(Exception):
 class AHVFenceAgentException(Exception):
     pass
 
+class TaskTimedOutException(Exception):
+    pass
+
 
 class NutanixClient:
     def __init__(self, username, password, disable_warnings=False):
@@ -110,7 +113,7 @@ class NutanixV4Client(NutanixClient):
         elif limit and not filter_str:
             vm_url = f"{vm_url}?$limit={limit}"
 
-        logging.debug("Sending GET request to get VM details, %s", vm_url)
+        logging.debug("Getting info for all VMs, %s", vm_url)
         header_str = self._get_headers()
 
         try:
@@ -138,6 +141,15 @@ class NutanixV4Client(NutanixClient):
             logging.error("Failed to get VM info for VM %s", vm_name)
             raise AHVFenceAgentException from err
 
+        if not resp or not isinstance(resp, dict):
+            logging.error("Failed to retrieve VM UUID for VM %s", vm_name)
+            raise AHVFenceAgentException from err
+
+        if 'data' not in resp:
+            err = f"Error: Unsuccessful match for VM name: {vm_name}"
+            logging.error("Failed to retrieve VM UUID for VM %s", vm_name)
+            raise AHVFenceAgentException(err)
+
         for vm in resp['data']:
             if vm['name'] == vm_name:
                 vm_uuid = vm['extId']
@@ -151,7 +163,7 @@ class NutanixV4Client(NutanixClient):
             raise AHVFenceAgentException("VM UUID not provided")
 
         vm_url = self.vm_url + f"/{vm_uuid}"
-        logging.info("Sending GET request to get VM details, %s", vm_uuid)
+        logging.info("Getting config information for VM, %s", vm_uuid)
         header_str = self._get_headers()
 
         try:
@@ -230,7 +242,7 @@ class NutanixV4Client(NutanixClient):
         task_url = f"{self.task_url}/{task_uuid}"
         header_str = self._get_headers()
         task_resp = None
-        interval = 10
+        interval = 5
         task_status = None
 
         if not timeout:
@@ -242,8 +254,11 @@ class NutanixV4Client(NutanixClient):
                 timeout = MIN_TIMEOUT
 
         while task_status != 'SUCCEEDED':
-            if task_status == 'FAILED':
-                raise NutanixClientException(f"Task failed, task uuid: {task_uuid}")
+            if timeout <= 0:
+                raise TaskTimedOutException(f"Task timed out: {task_uuid}")
+
+            time.sleep(interval)
+            timeout = timeout - interval
 
             try:
                 task_resp = self.request(url=task_url, method='GET',
@@ -253,15 +268,8 @@ class NutanixV4Client(NutanixClient):
                 logging.error("Unable to retrieve task status")
                 raise AHVFenceAgentException from err
 
-            if task_status == 'SUCCEEDED':
-                break
-
-            time.sleep(interval)
-            timeout = timeout - interval
-
-            if timeout <= 0:
-                raise AHVFenceAgentException("Timed out waiting"
-                                             f" for task: {task_uuid}")
+            if task_status == 'FAILED':
+                raise NutanixClientException(f"Task failed, task uuid: {task_uuid}")
 
     def list_vms(self, filter_str=None, limit=None):
         vms = None
@@ -293,6 +301,7 @@ class NutanixV4Client(NutanixClient):
 
     def get_power_state(self, vm_name=None, vm_uuid=None):
         resp = None
+        power_state = None
 
         if not vm_name and not vm_uuid:
             logging.error("Require at least one of VM name or VM UUID")
@@ -311,7 +320,12 @@ class NutanixV4Client(NutanixClient):
             logging.error("Unable to retrieve power state of VM %s", vm_uuid)
             raise AHVFenceAgentException from err
 
-        power_state = resp.json()['data']['powerState']
+        try:
+            power_state = resp.json()['data']['powerState']
+        except AHVFenceAgentException as err:
+            logging.error("Failed to retrieve power state of VM %s", vm_uuid)
+            raise AHVFenceAgent_exception from err
+
         return POWER_STATES[power_state]
 
     def set_power_state(self, vm_name=None, vm_uuid=None,
@@ -353,9 +367,13 @@ class NutanixV4Client(NutanixClient):
             logging.error("VM power %s task failed with status, %s",
                             power_state.lower(), status)
             raise AHVFenceAgentException from err
+        except TaskTimedOutException as err:
+            logging.error("Timed out powering %s VM %s",
+                          power_state.lower(), vm_uuid)
+            raise TaskTimedOutException from err
 
         logging.info("Powered %s VM, %s successfully",
-                     power_state.lower(), vm_name)
+                     power_state.lower(), vm_uuid)
 
     def power_cycle_vm(self, vm_name=None, vm_uuid=None, timeout=None):
         resp = None
@@ -380,8 +398,12 @@ class NutanixV4Client(NutanixClient):
             logging.error("Failed to power-cycle VM %s", vm_uuid)
             logging.error("VM power-cycle task failed with status, %s", status)
             raise AHVFenceAgentException from err
+        except TaskTimedOutException as err:
+            logging.error("Timed out power-cycling VM %s", vm_uuid)
+            raise TaskTimedOutException from err
 
-        logging.info("Power-cycled VM, %s", vm_name)
+
+        logging.info("Power-cycled VM, %s", vm_uuid)
 
 
 def connect(options):
@@ -427,7 +449,7 @@ def get_list(client, options):
 
     return vm_list
 
-def get_power_state(client, options):
+def get_power_status(client, options):
     vmid = None
     name = None
     power_state = None
@@ -447,7 +469,7 @@ def get_power_state(client, options):
 
     return power_state
 
-def set_power_state(client, options):
+def set_power_status(client, options):
     vmid = None
     name = None
     action = None
@@ -477,6 +499,9 @@ def set_power_state(client, options):
     except AHVFenceAgentException as err:
         logging.error(err)
         fail(EC_GENERIC_ERROR)
+    except TaskTimedOutException as err:
+        logging.error(err)
+        fail(EC_TIMED_OUT)
 
 def power_cycle(client, options):
     vmid = None
@@ -500,6 +525,9 @@ def power_cycle(client, options):
     except AHVFenceAgentException as err:
         logging.error(err)
         fail(EC_GENERIC_ERROR)
+    except TaskTimedOutException as err:
+        logging.error(err)
+        fail(EC_TIMED_OUT)
 
 def define_new_opts():
     all_opt["filter"] = {
@@ -550,7 +578,7 @@ def main():
     run_delay(options)
     client = connect(options)
 
-    result = fence_action(client, options, set_power_state, get_power_state,
+    result = fence_action(client, options, set_power_status, get_power_status,
                           get_list, reboot_cycle_fn=power_cycle
                          )
 
