@@ -34,9 +34,19 @@ class AHVFenceAgentException(Exception):
 
 class NutanixClient:
         """
-        Nutanix REST Client
+        Nutanix REST Client base class
         """
         def __init__(self, username, password):
+                """
+                Init method
+
+                Args:
+                    username(str): username for Prism Central user
+                    password(str): password for Prism Central user account
+
+                Returns:
+                    Python requests response object
+                """
                 self.username = username
                 self.password = password
                 self.valid_status_codes = [200, 202]
@@ -56,7 +66,6 @@ class NutanixClient:
                 """
                 session = requests.Session()
                 session.auth = (self.username, self.password)
-
                 if headers:
                         session.headers.update(headers)
 
@@ -68,6 +77,10 @@ class NutanixClient:
                 except requests.exceptions.RequestException as err:
                         logging.error("API call failed: %s", response.text)
                         logging.error("Error message: %s", err)
+                        raise NutanixClientException(f"API call failed: {err}") from err
+                except Exception as err:
+                        logging.error("API call failed: %s", response.text)
+                        logging.error("Unknown error %s", err)
                         raise NutanixClientException(f"API call failed: {err}") from err
 
                 if response.status_code not in self.valid_status_codes:
@@ -351,9 +364,6 @@ class V4NutanixClient(NutanixClient):
 
                         time.sleep(interval)
                         timeout = timeout - interval
-
-                        if task_status == 'SUCCEEDED':
-                                break
 
                         if timeout <= 0:
                                 raise AHVFenceAgentException("Timed out waiting"
