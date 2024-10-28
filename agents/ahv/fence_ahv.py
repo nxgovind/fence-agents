@@ -45,7 +45,7 @@ class NutanixClient:
             password(str): password for Prism Central user account
 
         Returns:
-            Python requests response object
+            None
         """
         self.username = username
         self.password = password
@@ -77,6 +77,7 @@ class NutanixClient:
         response = None
 
         try:
+            logging.debug("Sending %s request to %s", method, url)
             response = session.request(method, url, **kwargs)
             response.raise_for_status()
         except requests.exceptions.RequestException as err:
@@ -172,7 +173,7 @@ class V4NutanixClient(NutanixClient):
         elif limit and not filter_str:
             vm_url = f"{vm_url}?$limit={limit}"
 
-        logging.info("Sending GET request to get VM details, %s", vm_url)
+        logging.debug("Sending GET request to get VM details, %s", vm_url)
         header_str = self._get_headers()
 
         try:
@@ -231,7 +232,7 @@ class V4NutanixClient(NutanixClient):
             raise AHVFenceAgentException("VM UUID not provided")
 
         vm_url = self.vm_url + f"/{vm_uuid}"
-        logging.info("Sending GET request to get VM details, %s", vm_url)
+        logging.info("Sending GET request to get VM details, %s", vm_uuid)
         header_str = self._get_headers()
 
         try:
@@ -261,7 +262,7 @@ class V4NutanixClient(NutanixClient):
             raise AHVFenceAgentException("VM UUID not provided")
 
         vm_url = self.vm_url + f"/{vm_uuid}/$actions/power-off"
-        logging.info("Sending request to power off VM, %s", vm_url)
+        logging.info("Sending request to power off VM, %s", vm_uuid)
 
         try:
             headers_str = self._get_headers(vm_uuid)
@@ -289,7 +290,7 @@ class V4NutanixClient(NutanixClient):
 
         resp = None
         vm_url = self.vm_url + f"/{vm_uuid}/$actions/power-on"
-        logging.info("Sending request to power on VM, %s", vm_url)
+        logging.info("Sending request to power on VM, %s", vm_uuid)
 
         try:
             header_str = self._get_headers(vm_uuid)
@@ -317,7 +318,7 @@ class V4NutanixClient(NutanixClient):
 
         resp = None
         vm_url = self.vm_url + f"/{vm_uuid}/$actions/power-cycle"
-        logging.info("Sending request to power cycle VM, %s", vm_url)
+        logging.info("Sending request to power cycle VM, %s", vm_uuid)
 
         try:
             header_str = self._get_headers(vm_uuid)
